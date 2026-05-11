@@ -55,10 +55,22 @@ def main():
             if line.strip():
                 items.append(json.loads(line))
 
-    print(f"Deobfuscating {len(items)} samples...")
+    # Resume checkpoint: skip already processed items
+    start_idx = 0
+    if os.path.exists(OUT_FILE):
+        with open(OUT_FILE, "r", encoding="utf-8") as f:
+            start_idx = sum(1 for _ in f)
+        print(f"Resuming from item {start_idx}/{len(items)} "
+              f"({start_idx/len(items)*100:.0f}% done)")
+
+    print(f"Deobfuscating {len(items) - start_idx} remaining samples...")
 
     ok = err = 0
-    with open(OUT_FILE, "w", encoding="utf-8") as f:
+    mode = "a" if start_idx > 0 else "w"
+    with open(OUT_FILE, mode, encoding="utf-8") as f:
+        for i, item in enumerate(items):
+            if i < start_idx:
+                continue
         for i, item in enumerate(items):
             # Process both buggy and fixed code
             de_buggy = deobfuscate_one(client, item["python_buggy"])

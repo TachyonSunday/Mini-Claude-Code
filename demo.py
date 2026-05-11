@@ -216,7 +216,8 @@ def _clean_workspace(ws: str) -> None:
             shutil.rmtree(p)
 
 
-def interactive_mode(use_rag: bool = False, use_stats: bool = False):
+def interactive_mode(use_rag: bool = False, use_stats: bool = False,
+                     self_consistency: int = 1):
     """Interactive REPL: user types tasks, agents execute. Supports retry on failure."""
     ws = os.path.join(os.path.dirname(__file__), "workspace")
     os.makedirs(ws, exist_ok=True)
@@ -325,7 +326,8 @@ def interactive_mode(use_rag: bool = False, use_stats: bool = False):
             task = raw
 
         print()
-        orch = Orchestrator(on_progress=on_progress, use_rag=use_rag, use_stats=use_stats)
+        orch = Orchestrator(on_progress=on_progress, use_rag=use_rag,
+                             use_stats=use_stats, self_consistency=self_consistency)
         last_result = orch.run(task if last_result is None or last_result.get("success")
                                else task)
         print()
@@ -362,6 +364,7 @@ def main():
     parser.add_argument("--list", action="store_true", help="List available demos")
     parser.add_argument("--rag", action="store_true", help="Enable RAG few-shot retrieval")
     parser.add_argument("--stats", action="store_true", help="Inject fix pattern statistics into planner")
+    parser.add_argument("--consistency", type=int, default=1, help="Self-consistency sampling count (default 1=off)")
     args = parser.parse_args()
 
     if os.environ.get("DEEPSEEK_API_KEY", "").startswith("sk-your-"):
@@ -375,7 +378,8 @@ def main():
         sys.exit(1)
 
     if args.interactive:
-        interactive_mode(use_rag=args.rag, use_stats=args.stats)
+        interactive_mode(use_rag=args.rag, use_stats=args.stats,
+                         self_consistency=args.consistency)
     elif args.list:
         print(make_banner())
         print()

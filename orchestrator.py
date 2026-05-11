@@ -15,6 +15,7 @@ class Orchestrator:
     """
 
     def __init__(self, use_rag: bool = False, use_stats: bool = False,
+                 self_consistency: int = 1,
                  on_progress: Callable = None):
         stats = ""
         if use_stats:
@@ -24,8 +25,64 @@ class Orchestrator:
         self.reviewer = ReviewerAgent(on_progress=on_progress)
         self.use_rag = use_rag
         self.use_stats = use_stats
+        self.self_consistency = self_consistency
         self.on_progress = on_progress
         self.trace: list[dict] = []
+
+    def _run_self_consistency(self, plan_text: str, context: str) -> str:
+        """Run coder N times and select the most consistent output."""
+        n = self.self_consistency
+        self._emit("code", f"Self-Consistency: 运行 {n} 次独立采样...")
+        answers = []
+        for i in range(n):
+            self._emit("code", f"  第 {i+1}/{n} 次...")
+            self.coder.reset()
+            # Snapshot workspace before each run to restore
+            from tools.file_tools import WORKSPACE_ROOT
+            import shutil
+            ws = str(WORKSPACE_ROOT) if WORKSPACE_ROOT else None
+            snapshot = None
+            if ws:
+                snapshot = os.path.join(os.path.dirname(ws), ".snapshot")
+                if os.path.exists(snapshot):
+                    shutil.rmtree(snapshot)
+                shutil.copytree(ws, snapshot, dirs_exist_ok=True)
+
+            self.coder.run(
+                task=f"按照以下方案执行代码修改：\n{plan_text}",
+                context=context,
+            )
+            answers.append(self.coder.final_answer)
+
+            # Restore workspace from snapshot for next run
+            if snapshot and os.path.exists(snapshot):
+                for f in os.listdir(ws):
+                    p = os.path.join(ws, f)
+                    if os.path.isfile(p):
+                        os.remove(p)
+                    elif os.path.isdir(p) and f != ".git":
+                        shutil.rmtree(p)
+                for f in os.listdir(snapshot):
+                    sp = os.path.join(snapshot, f)
+                    if os.path.isfile(sp):
+                        shutil.copy2(sp, os.path.join(ws, f))
+                    elif os.path.isdir(sp):
+                        shutil.copytree(sp, os.path.join(ws, f), dirs_exist_ok=True)
+
+        # Simple consistency check: do answers agree?
+        if len(set(a[:200] for a in answers)) == 1:
+            self._emit("code", f"Self-Consistency: {n}/{n} 次结果一致 ✗")
+            # Run once more to apply changes
+            self.coder.reset()
+            self.coder.run(
+                task=f"按照以下方案执行代码修改：\n{plan_text}",
+                context=context,
+            )
+            return self.coder.final_answer
+        else:
+            self._emit("code", f"Self-Consistency: {n} 次结果存在分歧，选取最详细方案")
+            # Pick the longest (most detailed) answer
+            return max(answers, key=len)
 
     @staticmethod
     def _load_stats() -> str:
@@ -85,16 +142,23 @@ class Orchestrator:
         # --- Code + Review loop ---
         review_text = ""
         for round_num in range(max_review_rounds):
-            # Code phase
+            # Code phase (with optional self-consistency)
             self._emit("code", f"启动编码Agent (第{round_num+1}轮)...")
             code_context = ""
             if round_num > 0 and review_text:
                 code_context = f"上一轮审查反馈：\n{review_text}"
-            code_steps = self.coder.run(
-                task=f"按照以下方案执行代码修改：\n{plan_text}",
-                context=code_context,
-            )
-            code_text = self.coder.final_answer
+
+            if self.self_consistency > 1 and round_num == 0:
+                # Self-consistency: run coder N times, pick majority
+                code_text = self._run_self_consistency(plan_text, code_context)
+                code_steps = []
+            else:
+                code_steps = self.coder.run(
+                    task=f"按照以下方案执行代码修改：\n{plan_text}",
+                    context=code_context,
+                )
+                code_text = self.coder.final_answer
+
             self.trace.append({
                 "phase": f"code_round{round_num+1}",
                 "steps": code_steps,

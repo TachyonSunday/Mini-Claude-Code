@@ -7,3 +7,4 @@ data/*.faiss
 data/*_meta.jsonl
 *.egg-info/
 .pytest_cache/
+.snapshot/

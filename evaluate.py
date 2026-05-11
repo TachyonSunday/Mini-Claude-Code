@@ -48,9 +48,10 @@ def run_one(sample: dict, config: str) -> dict:
 
     setup_workspace(buggy)
 
-    use_rag = config == "stats"
+    use_rag = config == "rag"
     use_stats = config == "stats"
-    orch = Orchestrator(use_rag=use_rag, use_stats=use_stats)
+    use_clf = config == "classifier"
+    orch = Orchestrator(use_rag=use_rag, use_stats=use_stats, use_classifier=use_clf)
 
     if config == "no_reviewer":
         orch.reviewer = None
@@ -78,7 +79,7 @@ def run_one(sample: dict, config: str) -> dict:
 
 def run_ablation(limit: int = 50) -> list[dict]:
     samples = load_samples(limit)
-    configs = ["full", "no_reviewer", "no_planner", "single", "stats"]
+    configs = ["full", "no_reviewer", "no_planner", "single", "stats", "classifier"]
     results = []
 
     for config in configs:
@@ -118,7 +119,7 @@ def save_csv(results: list[dict], path: str) -> None:
     with open(agg_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["config", "total", "passed", "accuracy", "avg_time_s"])
-        for config in ["full", "no_reviewer", "no_planner", "single", "stats"]:
+        for config in ["full", "no_reviewer", "no_planner", "single", "stats", "classifier"]:
             s = by_config.get(config)
             if s:
                 acc = s["passed"] / s["total"] if s["total"] else 0
@@ -127,7 +128,7 @@ def save_csv(results: list[dict], path: str) -> None:
 
     print(f"Aggregate CSV: {agg_path}")
     print()
-    for config in ["full", "no_reviewer", "no_planner", "single", "stats"]:
+    for config in ["full", "no_reviewer", "no_planner", "single", "stats", "classifier"]:
         s = by_config.get(config)
         if s:
             acc = s["passed"] / s["total"] if s["total"] else 0

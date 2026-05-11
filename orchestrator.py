@@ -15,6 +15,7 @@ class Orchestrator:
     """
 
     def __init__(self, use_rag: bool = False, use_stats: bool = False,
+                 use_classifier: bool = False,
                  self_consistency: int = 1,
                  on_progress: Callable = None):
         stats = ""
@@ -25,6 +26,7 @@ class Orchestrator:
         self.reviewer = ReviewerAgent(on_progress=on_progress)
         self.use_rag = use_rag
         self.use_stats = use_stats
+        self.use_classifier = use_classifier
         self.self_consistency = self_consistency
         self.on_progress = on_progress
         self.trace: list[dict] = []
@@ -84,6 +86,45 @@ class Orchestrator:
             # Pick the longest (most detailed) answer
             return max(answers, key=len)
 
+    def _predict_fix_type(self, task: str, code: str = "") -> str:
+        """Use classifier to predict the likely fix type for this task."""
+        try:
+            import pickle
+            import re
+            model_path = os.path.join(os.path.dirname(__file__), "models")
+            with open(os.path.join(model_path, "vectorizer.pkl"), "rb") as f:
+                vec = pickle.load(f)
+            with open(os.path.join(model_path, "classifier.pkl"), "rb") as f:
+                clf = pickle.load(f)
+            # Extract features from the combined task+code text
+            tokens = re.findall(r'[A-Za-z_]\w*|[+\-*/<>=!&|^~]+|[0-9]+|[(){}\[\]]',
+                                task + " " + code)
+            structural = {'if','else','for','while','try','except','return','raise',
+                          'def','class','None','True','False','and','or','not','in','is'}
+            filtered = [t for t in tokens if t in structural
+                        or t.startswith('VAR_') or t.startswith('METHOD_')
+                        or t.startswith('TYPE_')]
+            features = vec.transform([' '.join(filtered)])
+            probs = clf.predict_proba(features)[0]
+            top_idx = probs.argmax()
+            top_label = clf.classes_[top_idx]
+            top_conf = probs[top_idx]
+
+            parts = [
+                f"\n## 分类器预测",
+                f"根据训练好的修复类型分类器，这个任务最可能的修复类型是：",
+                f"**{top_label}** (置信度 {top_conf:.1%})",
+            ]
+            # Show top-3 predictions
+            top3 = sorted(zip(clf.classes_, probs), key=lambda x: -x[1])[:3]
+            parts.append("其他可能类型：")
+            for label, prob in top3[1:]:
+                parts.append(f"  - {label}: {prob:.1%}")
+            parts.append("请对照预测类型优先考虑对应的修复模式。")
+            return "\n".join(parts)
+        except Exception:
+            return ""
+
     @staticmethod
     def _load_stats() -> str:
         try:
@@ -128,9 +169,12 @@ class Orchestrator:
         self._emit("plan", "启动规划Agent...")
         if self.planner is not None:
             rag_ctx = self._get_rag_context(task)
+            clf_ctx = self._predict_fix_type(task) if self.use_classifier else ""
             plan_prompt = f"分析以下任务需求，制定修改方案：\n{task}"
             if rag_ctx:
                 plan_prompt = rag_ctx + "\n" + plan_prompt
+            if clf_ctx:
+                plan_prompt = clf_ctx + "\n" + plan_prompt
             plan_steps = self.planner.run(task=plan_prompt)
             plan_text = self.planner.final_answer
             self.trace.append({"phase": "plan", "steps": plan_steps, "output": plan_text})

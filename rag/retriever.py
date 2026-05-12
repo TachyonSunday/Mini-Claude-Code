@@ -73,8 +73,8 @@ def format_few_shot(examples: list[dict]) -> str:
         return ""
     parts = ["参考以下类似bug的修复方式：\n"]
     for i, ex in enumerate(examples, 1):
-        buggy = ex.get("buggy", ex.get("buggy_code", ""))
-        fixed = ex.get("fixed", ex.get("fixed_code", ""))
+        buggy = ex.get("deobfuscated_buggy") or ex.get("python_buggy") or ex.get("buggy_code") or ex.get("buggy", "")
+        fixed = ex.get("deobfuscated_fixed") or ex.get("python_fixed") or ex.get("fixed_code") or ex.get("fixed", "")
         parts.append(f"--- 案例 {i} ---")
         parts.append(f"修复前: {buggy[:500]}")
         parts.append(f"修复后: {fixed[:500]}")

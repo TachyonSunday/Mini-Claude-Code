@@ -19,13 +19,8 @@ MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 def extract_features(code: str) -> str:
     """Extract structural features from code."""
     tokens = re.findall(r'[A-Za-z_]\w*|[+\-*/<>=!&|^~]+|[0-9]+|[(){}\[\]]', code)
-    # Keep key structural tokens
-    structural = {'if', 'else', 'for', 'while', 'try', 'except', 'return', 'raise',
-                  'def', 'class', 'None', 'True', 'False', 'and', 'or', 'not', 'in', 'is'}
-    filtered = []
-    for t in tokens:
-        if t in structural or t.startswith('VAR_') or t.startswith('METHOD_') or t.startswith('TYPE_'):
-            filtered.append(t)
+    # Keep all meaningful tokens
+    filtered = [t for t in tokens if len(t) > 1 and not t.isdigit()]
     return ' '.join(filtered)
 
 
@@ -33,7 +28,7 @@ def main():
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     # Load data
-    src = os.path.join(DATA_DIR, "codexglue_py_2k.jsonl")
+    src = os.path.join(DATA_DIR, "codexglue_py_deobfuscated.jsonl")
     if not os.path.exists(src):
         print(f"Data not found: {src}")
         sys.exit(1)
@@ -44,7 +39,7 @@ def main():
         for line in f:
             if line.strip():
                 item = json.loads(line)
-                texts.append(extract_features(item["python_buggy"]))
+                texts.append(extract_features(item.get("deobfuscated_buggy", item["python_buggy"])))
                 labels.append(item["fix_type"])
 
     print(f"Loaded {len(texts)} samples")

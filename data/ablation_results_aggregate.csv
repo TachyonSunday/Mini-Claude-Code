@@ -1,0 +1,7 @@
+config,total,passed,accuracy,avg_time_s
+full,10,9,0.9,37.5
+no_reviewer,10,10,1.0,23.2
+no_planner,10,10,1.0,24.5
+single,10,10,1.0,8.7
+stats,10,7,0.7,40.6
+classifier,10,9,0.9,34.5
